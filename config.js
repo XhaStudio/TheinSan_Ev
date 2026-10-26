@@ -8,4 +8,4 @@
 //
 // The address must be HTTPS: GitHub Pages is HTTPS, and browsers block a
 // plain-http request from an https:// page.
-window.MINIAPP_API_BASE = "https://github.com/XhaStudio/TheinSan_Ev";
+window.MINIAPP_API_BASE = "https://118-27-147-218.sslip.io";

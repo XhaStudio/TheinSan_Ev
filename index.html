@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="my">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <title>EV Taxi အက်ဒမင်</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+</head>
+<body>
+  <div id="gate" class="gate" hidden>
+    <div class="gate-card">
+      <div class="logo" aria-hidden="true">🚖</div>
+      <h1>EV Taxi အက်ဒမင်</h1>
+      <p id="gate-message">Telegram လော့ဂ်အင်ကို စစ်ဆေးနေသည်…</p>
+      <button id="gate-retry" class="btn" type="button" hidden>ထပ်စမ်းကြည့်</button>
+    </div>
+  </div>
+
+  <div id="app" hidden>
+    <header class="topbar">
+      <div class="identity">
+        <h1>EV Taxi အက်ဒမင်</h1>
+        <div id="who" class="muted"></div>
+      </div>
+      <button id="refresh" class="btn ghost small" type="button">↻ ပြန်ယူ</button>
+    </header>
+
+    <nav class="tabs" aria-label="အပိုင်းများ">
+      <button class="tab is-active" type="button" data-tab="bookings">ဘွတ်ကင်</button>
+      <button class="tab" type="button" data-tab="queue">တန်းစီ</button>
+      <button class="tab" type="button" data-tab="vehicles">ယာဉ်များ</button>
+      <button class="tab" type="button" data-tab="drivers">ယာဉ်မောင်းများ</button>
+      <button class="tab" type="button" data-tab="routes">လမ်းကြောင်းများ</button>
+    </nav>
+
+    <main>
+      <section class="panel" data-panel="bookings">
+        <div class="toolbar">
+          <label class="field inline">
+            <span>အခြေအနေ</span>
+            <select id="booking-status">
+              <option value="">အားလုံး</option>
+              <option value="new">အသစ်</option>
+              <option value="in_progress">လုပ်ဆောင်နေသည်</option>
+              <option value="completed">ပြီးစီး</option>
+              <option value="cancelled">ပယ်ဖျက်</option>
+            </select>
+          </label>
+          <span id="bookings-count" class="muted"></span>
+        </div>
+        <div id="bookings-list" class="stack"></div>
+      </section>
+
+      <section class="panel" data-panel="queue" hidden>
+        <div id="queue-list" class="stack"></div>
+      </section>
+
+      <section class="panel" data-panel="vehicles" hidden>
+        <div id="vehicles-list" class="grid"></div>
+      </section>
+
+      <section class="panel" data-panel="drivers" hidden>
+        <div id="drivers-list" class="grid"></div>
+      </section>
+
+      <section class="panel" data-panel="routes" hidden>
+        <form id="route-form" class="inline-form">
+          <input name="name" type="text" placeholder="လမ်းကြောင်းအမည်အသစ်" minlength="2" maxlength="160" required>
+          <button class="btn" type="submit">လမ်းကြောင်းထည့်</button>
+        </form>
+
+        <details class="disclosure">
+          <summary>တည်နေရာထည့်</summary>
+          <form id="location-form" class="inline-form">
+            <input name="name" type="text" placeholder="မြို့ သို့မဟုတ် ကားလဲနေရာ" minlength="2" maxlength="120" required>
+            <label class="check"><input name="is_transfer_point" type="checkbox"> ကားလဲနေရာ</label>
+            <button class="btn ghost" type="submit">တည်နေရာထည့်</button>
+          </form>
+        </details>
+
+        <div id="routes-list" class="stack"></div>
+      </section>
+    </main>
+  </div>
+
+  <dialog id="segment-dialog">
+    <form id="segment-form">
+      <h2 id="segment-title">အဆင့်</h2>
+      <input type="hidden" name="route_id">
+      <input type="hidden" name="segment_id">
+      <label class="field">
+        <span>မှ</span>
+        <select name="from_location_id" required></select>
+      </label>
+      <label class="field">
+        <span>ထိ</span>
+        <select name="to_location_id" required></select>
+      </label>
+      <label class="field">
+        <span>ခရီးသည် တစ်ဦးလျှင် ခရီးခ (MMK)</span>
+        <input name="base_fare" type="number" min="0" step="100" required>
+      </label>
+      <label class="field">
+        <span>ယာဉ်မောင်း အချိုး (%)</span>
+        <input name="driver_percent" type="number" min="0" max="100" step="0.01" required>
+      </label>
+      <label class="field">
+        <span>ယာဉ်မောင်း ပုံသေငွေ (MMK)</span>
+        <input name="driver_fixed_amount" type="number" min="0" step="100" placeholder="အချိုးသုံးလိုပါက အလွတ်ထားပါ">
+      </label>
+      <div class="dialog-actions">
+        <button id="segment-cancel" class="btn ghost" type="button">ပယ်ဖျက်</button>
+        <button class="btn" type="submit">အဆင့်သိမ်း</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="route-dialog">
+    <form id="route-edit-form">
+      <h2>လမ်းကြောင်း အမည်ပြောင်း</h2>
+      <input type="hidden" name="route_id">
+      <label class="field">
+        <span>လမ်းကြောင်းအမည်</span>
+        <input name="name" type="text" minlength="2" maxlength="160" required>
+      </label>
+      <div class="dialog-actions">
+        <button id="route-cancel" class="btn ghost" type="button">ပယ်ဖျက်</button>
+        <button class="btn" type="submit">သိမ်း</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

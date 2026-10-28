@@ -235,6 +235,29 @@ function bookingCard(booking) {
   return card;
 }
 
+function renderBookingRouteOptions() {
+  const select = $("#booking-form").elements.route_id;
+  const selected = select.value;
+  select.replaceChildren(new Option("လမ်းကြောင်းရွေးပါ…", ""));
+  state.routes.forEach((route) => {
+    const option = new Option(
+      `${route.name}${route.segments.length ? ` · ${route.segments.length} အဆင့် · ${money(route.total_fare)}/ဦး` : " · အဆင့်မရှိသေး"}`,
+      String(route.id)
+    );
+    option.disabled = route.segments.length === 0;
+    option.selected = String(route.id) === selected;
+    select.append(option);
+  });
+}
+
+function setDefaultPickupTime() {
+  const input = $("#booking-form").elements.pickup_time;
+  if (input.value) return;
+  const now = new Date(Date.now() - new Date().getTimezoneOffset() * 60000);
+  now.setMinutes(now.getMinutes() + 30);
+  input.value = now.toISOString().slice(0, 16);
+}
+
 function renderBookings(data) {
   const list = $("#bookings-list");
   list.replaceChildren();
@@ -251,9 +274,47 @@ function renderBookings(data) {
 async function loadBookings() {
   const status = $("#booking-status").value;
   const suffix = status ? `&status=${encodeURIComponent(status)}` : "";
-  const data = await api(`/api/bookings?limit=200${suffix}`);
+  const [data, routes] = await Promise.all([
+    api(`/api/bookings?limit=200${suffix}`),
+    api("/api/routes"),
+  ]);
   state.bookings = data.items;
+  state.routes = routes.items;
+  renderBookingRouteOptions();
+  setDefaultPickupTime();
   renderBookings(data);
+}
+
+async function createBooking(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const submit = $("#booking-submit");
+  const payload = {
+    customer_name: form.elements.customer_name.value.trim(),
+    customer_phone: form.elements.customer_phone.value.trim() || null,
+    route_id: Number(form.elements.route_id.value),
+    passenger_count: Number(form.elements.passenger_count.value),
+    pickup_time: new Date(form.elements.pickup_time.value).toISOString(),
+  };
+  if (!payload.customer_name || !payload.route_id || !payload.pickup_time) {
+    toast("အမည်၊ လမ်းကြောင်းနှင့် ကြိုယူချိန်ကို ဖြည့်ပါ", true);
+    return;
+  }
+  submit.disabled = true;
+  try {
+    const created = await api("/api/bookings", { method: "POST", body: payload });
+    form.elements.customer_name.value = "";
+    form.elements.customer_phone.value = "";
+    form.elements.passenger_count.value = "1";
+    setDefaultPickupTime();
+    $("#booking-status").value = "";
+    toast(`ဘွတ်ကင် #${created.id} သိမ်းပြီးပါပြီ။ ယာဉ်သတ်မှတ်ရန် အောက်ပါစာရင်းတွင် ကြည့်ပါ။`);
+    await loadBookings();
+  } catch (error) {
+    if (!error.auth) toast(error.message, true);
+  } finally {
+    submit.disabled = false;
+  }
 }
 
 /* -------------------------------------------------------------------------- */
@@ -746,6 +807,7 @@ function wireEvents() {
       if (!error.auth) toast(error.message, true);
     });
   });
+  $("#booking-form").addEventListener("submit", createBooking);
   $("#refresh").addEventListener("click", refreshActive);
   $("#gate-retry").addEventListener("click", () => window.location.reload());
   $("#route-form").addEventListener("submit", addRoute);

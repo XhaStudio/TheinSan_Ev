@@ -100,20 +100,25 @@
       </section>
 
       <section class="panel" data-panel="routes" hidden>
-        <form id="route-form" class="inline-form">
-          <input name="name" type="text" placeholder="လမ်းကြောင်းအမည်အသစ်" minlength="2" maxlength="160" required>
-          <button class="btn" type="submit">လမ်းကြောင်းထည့်</button>
-        </form>
-
-        <details class="disclosure">
-          <summary>တည်နေရာထည့်</summary>
-          <form id="location-form" class="inline-form">
-            <input name="name" type="text" placeholder="မြို့ သို့မဟုတ် ကားလဲနေရာ" minlength="2" maxlength="120" required>
-            <label class="check"><input name="is_transfer_point" type="checkbox"> ကားလဲနေရာ</label>
+        <details class="disclosure admin-tools">
+          <summary>⚙️ လမ်းကြောင်း / တည်နေရာအသစ် ထည့်ရန်</summary>
+          <p class="form-hint">ပုံမှန်ဘွတ်ကင်အတွက် မလိုအပ်ပါ။ လမ်းကြောင်းအသစ်စတင်သတ်မှတ်ချိန်တွင်သာ ဖွင့်ပါ။</p>
+          <form id="route-form" class="stack">
+            <label class="field">
+              <span>လမ်းကြောင်းအမည်အသစ်</span>
+              <input name="name" type="text" placeholder="ဥပမာ - မန္တလေး → လားရှိုး" minlength="2" maxlength="160" required>
+            </label>
+            <button class="btn" type="submit">လမ်းကြောင်းထည့်</button>
+          </form>
+          <form id="location-form" class="stack">
+            <label class="field">
+              <span>မြို့ / တည်နေရာအမည်</span>
+              <input name="name" type="text" placeholder="ဥပမာ - သီပေါ (ကားလဲနေရာ)" minlength="2" maxlength="120" required>
+            </label>
+            <label class="check"><input name="is_transfer_point" type="checkbox"> ကားလဲနေရာအဖြစ် သတ်မှတ်မည်</label>
             <button class="btn ghost" type="submit">တည်နေရာထည့်</button>
           </form>
         </details>
-
         <div id="routes-list" class="stack"></div>
       </section>
     </main>

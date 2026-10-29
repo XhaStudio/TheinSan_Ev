@@ -232,22 +232,106 @@ function bookingCard(booking) {
   const footer = node("div", "card-footer");
   footer.append(node("span", "muted", "စုစုပေါင်း ခရီးခ"), node("strong", "", money(booking.total_fare)));
   card.append(footer);
+  if (
+    booking.status === "new" &&
+    booking.segments.every(
+      (segment) =>
+        segment.status === "pending" && !segment.driver && !segment.vehicle
+    )
+  ) {
+    const actions = node("div", "booking-actions");
+    actions.append(
+      button("✎ ဘွတ်ကင်ပြင်", "btn ghost small", () => editBooking(booking)),
+      button("ဖျက်မည်", "btn danger small", () => deleteBooking(booking))
+    );
+    card.append(actions);
+  }
   return card;
+}
+
+function selectedBookingRoads() {
+  return Array.from(document.querySelectorAll(".booking-road input:checked"))
+    .map((input) => Number(input.value))
+    .filter(Number.isFinite);
+}
+
+function updateBookingFarePreview() {
+  const route = state.routes.find(
+    (item) => String(item.id) === $("#booking-form").elements.route_id.value
+  );
+  const selectedIds = new Set(selectedBookingRoads());
+  const passengers = Number($("#booking-form").elements.passenger_count.value) || 0;
+  const selectedSegments = route
+    ? route.segments.filter((segment) => selectedIds.has(segment.id))
+    : [];
+  const total = selectedSegments.reduce(
+    (sum, segment) => sum + Number(segment.base_fare || 0) * passengers,
+    0
+  );
+  const preview = $("#booking-fare-preview");
+  if (!selectedSegments.length) {
+    preview.textContent = "လမ်းပိုင်းရွေးပါ။";
+    return;
+  }
+  preview.textContent = `ရွေးထားသော ${selectedSegments.length} လမ်းပိုင်း · စုစုပေါင်း ${money(total)}`;
+}
+
+function renderBookingRoadOptions(route, selectedIds = []) {
+  const fieldset = $("#booking-roads");
+  const options = $("#booking-road-options");
+  options.replaceChildren();
+  if (!route || !route.segments.length) {
+    fieldset.hidden = true;
+    return;
+  }
+  fieldset.hidden = false;
+  const selected = new Set(selectedIds.map(Number));
+  route.segments.forEach((segment) => {
+    const label = node("label", "booking-road");
+    const checkbox = node("input");
+    checkbox.type = "checkbox";
+    checkbox.name = "segment_ids";
+    checkbox.value = String(segment.id);
+    checkbox.checked = selected.has(segment.id);
+    checkbox.addEventListener("change", () => {
+      const selectedIds = new Set(selectedBookingRoads());
+      const selectedRoads = route.segments.filter((item) => selectedIds.has(item.id));
+      const positions = selectedRoads.map((item) => item.sequence);
+      const isContinuous = positions.every(
+        (position, index) => index === 0 || position === positions[index - 1] + 1
+      );
+      if (!isContinuous) {
+        checkbox.checked = !checkbox.checked;
+        toast("ခရီးသည်သွားမည့် လမ်းပိုင်းများသည် ဆက်တိုက်ဖြစ်ရပါမည်", true);
+      }
+      updateBookingFarePreview();
+    });
+    const details = node("span", "booking-road-details");
+    details.append(
+      node("strong", "", `${segment.from_location} → ${segment.to_location}`),
+      node("span", "muted", `${money(segment.base_fare)} / ဦး`)
+    );
+    label.append(checkbox, details);
+    options.append(label);
+  });
+  updateBookingFarePreview();
 }
 
 function renderBookingRouteOptions() {
   const select = $("#booking-form").elements.route_id;
   const selected = select.value;
-  select.replaceChildren(new Option("လမ်းကြောင်းရွေးပါ…", ""));
+  select.replaceChildren(new Option("လမ်းကြောင်းအုပ်စု ရွေးပါ…", ""));
   state.routes.forEach((route) => {
     const option = new Option(
-      `${route.name}${route.segments.length ? ` · ${route.segments.length} အဆင့် · ${money(route.total_fare)}/ဦး` : " · အဆင့်မရှိသေး"}`,
+      `${route.name}${route.segments.length ? ` · ${route.segments.length} လမ်းပိုင်း` : " · အဆင့်မရှိသေး"}`,
       String(route.id)
     );
     option.disabled = route.segments.length === 0;
     option.selected = String(route.id) === selected;
     select.append(option);
   });
+  const route = state.routes.find((item) => String(item.id) === select.value);
+  renderBookingRoadOptions(route, selectedBookingRoads());
 }
 
 function setDefaultPickupTime() {
@@ -271,6 +355,58 @@ function renderBookings(data) {
   data.items.forEach((booking) => list.append(bookingCard(booking)));
 }
 
+let sheetSearchTimer = null;
+let sheetSearchSequence = 0;
+
+async function searchSheetGuests() {
+  const input = $("#sheet-guest-search");
+  const results = $("#sheet-guest-results");
+  const query = input.value.trim();
+  const requestId = ++sheetSearchSequence;
+  window.clearTimeout(sheetSearchTimer);
+  if (query.length < 2) {
+    results.hidden = true;
+    results.replaceChildren();
+    return;
+  }
+  sheetSearchTimer = window.setTimeout(async () => {
+    results.hidden = false;
+    results.replaceChildren(node("div", "muted", "Google Sheets မှ ရှာနေသည်…"));
+    try {
+      const data = await api(`/api/google-sheets/guests?q=${encodeURIComponent(query)}`);
+      if (requestId !== sheetSearchSequence) return;
+      results.replaceChildren();
+      if (!data.items.length) {
+        results.append(node("div", "muted", "ကိုက်ညီသော ဧည့်သည် မတွေ့ပါ။"));
+        return;
+      }
+      data.items.forEach((guest) => {
+        const selectGuest = button(
+          guest.phone ? `${guest.name} · ${guest.phone}` : guest.name,
+          "sheet-guest-option",
+          () => {
+            const form = $("#booking-form");
+            form.elements.customer_name.value = guest.name;
+            form.elements.customer_phone.value = guest.phone;
+            input.value = "";
+            results.hidden = true;
+            results.replaceChildren();
+            form.elements.route_id.focus();
+          }
+        );
+        results.append(selectGuest);
+      });
+    } catch (error) {
+      if (requestId !== sheetSearchSequence) return;
+      results.replaceChildren(
+        node("div", "muted", error.message.includes("မချိတ်ဆက်")
+          ? "Google Sheets မချိတ်ထားသေးပါ။ အမည်နှင့်ဖုန်းကို အောက်တွင် ကိုယ်တိုင်ရိုက်ထည့်နိုင်ပါသည်။"
+          : error.message)
+      );
+    }
+  }, 300);
+}
+
 async function loadBookings() {
   const status = $("#booking-status").value;
   const suffix = status ? `&status=${encodeURIComponent(status)}` : "";
@@ -285,30 +421,85 @@ async function loadBookings() {
   renderBookings(data);
 }
 
+function editBooking(booking) {
+  const form = $("#booking-form");
+  form.elements.booking_id.value = String(booking.id);
+  form.elements.customer_name.value = booking.customer_name;
+  form.elements.customer_phone.value = booking.customer_phone || "";
+  form.elements.route_id.value = String(booking.route_id);
+  form.elements.passenger_count.value = String(booking.passengers);
+  const pickup = new Date(booking.pickup_time);
+  pickup.setMinutes(pickup.getMinutes() - pickup.getTimezoneOffset());
+  form.elements.pickup_time.value = pickup.toISOString().slice(0, 16);
+  const route = state.routes.find((item) => item.id === booking.route_id);
+  renderBookingRoadOptions(
+    route,
+    booking.segments.map((segment) => segment.route_segment_id)
+  );
+  $("#booking-form-title").textContent = `ဘွတ်ကင် #${booking.id} ပြင်ဆင်ရန်`;
+  $("#booking-submit").textContent = "ပြင်ဆင်ချက် သိမ်းမည်";
+  $("#booking-cancel-edit").hidden = false;
+  form.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function resetBookingEditor() {
+  const form = $("#booking-form");
+  form.reset();
+  form.elements.booking_id.value = "";
+  form.elements.route_id.value = "";
+  form.elements.passenger_count.value = "1";
+  renderBookingRoadOptions(null);
+  $("#booking-form-title").textContent = "➕ ဘွတ်ကင်အသစ်";
+  $("#booking-submit").textContent = "ဘွတ်ကင်သိမ်းမည်";
+  $("#booking-cancel-edit").hidden = true;
+  setDefaultPickupTime();
+}
+
+async function deleteBooking(booking) {
+  const confirmed = await confirmAction(
+    `ဘွတ်ကင် #${booking.id} (${booking.customer_name}) ကို အပြီးဖျက်မှာ သေချာပါသလား? ပြန်ယူ၍မရပါ။`
+  );
+  if (!confirmed) return;
+
+  try {
+    await api(`/api/bookings/${booking.id}`, { method: "DELETE" });
+    toast(`ဘွတ်ကင် #${booking.id} ကို ဖျက်ပြီးပါပြီ။`);
+    await loadBookings();
+  } catch (error) {
+    if (!error.auth) toast(error.message, true);
+  }
+}
+
 async function createBooking(event) {
   event.preventDefault();
   const form = event.currentTarget;
   const submit = $("#booking-submit");
+  const selectedSegmentIds = selectedBookingRoads();
+  const bookingId = form.elements.booking_id.value;
   const payload = {
     customer_name: form.elements.customer_name.value.trim(),
     customer_phone: form.elements.customer_phone.value.trim() || null,
     route_id: Number(form.elements.route_id.value),
+    segment_ids: selectedSegmentIds,
     passenger_count: Number(form.elements.passenger_count.value),
     pickup_time: new Date(form.elements.pickup_time.value).toISOString(),
   };
   if (!payload.customer_name || !payload.route_id || !payload.pickup_time) {
-    toast("အမည်၊ လမ်းကြောင်းနှင့် ကြိုယူချိန်ကို ဖြည့်ပါ", true);
+    toast("အမည်၊ လမ်းကြောင်းအုပ်စုနှင့် ကြိုယူချိန်ကို ဖြည့်ပါ", true);
+    return;
+  }  if (!payload.segment_ids.length) {
+    toast("ခရီးသည်သွားမည့် လမ်းပိုင်း အနည်းဆုံးတစ်ခု ရွေးပါ", true);
     return;
   }
   submit.disabled = true;
   try {
-    const created = await api("/api/bookings", { method: "POST", body: payload });
-    form.elements.customer_name.value = "";
-    form.elements.customer_phone.value = "";
-    form.elements.passenger_count.value = "1";
-    setDefaultPickupTime();
+    const saved = await api(
+      bookingId ? `/api/bookings/${bookingId}` : "/api/bookings",
+      { method: bookingId ? "PATCH" : "POST", body: payload }
+    );
+    resetBookingEditor();
     $("#booking-status").value = "";
-    toast(`ဘွတ်ကင် #${created.id} သိမ်းပြီးပါပြီ။ ယာဉ်သတ်မှတ်ရန် အောက်ပါစာရင်းတွင် ကြည့်ပါ။`);
+    toast(`ဘွတ်ကင် #${saved.id} ${bookingId ? "ပြင်ဆင်ပြီး" : "သိမ်းပြီး"}ပါပြီ။`);
     await loadBookings();
   } catch (error) {
     if (!error.auth) toast(error.message, true);
@@ -408,7 +599,7 @@ function renderDrivers(data) {
   const list = $("#drivers-list");
   list.replaceChildren();
   if (!data.items.length) {
-    list.append(empty("ယာဉ်မောင်း မှတ်ပုံတင်ရသေးသူ မရှိပါ။"));
+    list.append(empty("ဝန်ထမ်း မရှိပါ။"));
     return;
   }
   data.items.forEach((driver) => {
@@ -416,8 +607,15 @@ function renderDrivers(data) {
     const head = node("div", "row between wrap");
     const title = node("div", "stack-tight");
     title.append(node("div", "card-title", driver.name));
+    title.append(node("div", "muted", ROLE_LABELS[driver.role] || driver.role));
     if (!driver.active) title.append(node("div", "muted", "ပိတ်ထားသည်"));
-    head.append(title, statusBadge(driver.status, DRIVER_LABELS));
+    const badge = driver.status
+      ? statusBadge(driver.status, DRIVER_LABELS)
+      : statusBadge(driver.active ? "available" : "off_duty", {
+          available: "အသုံးပြုနေသည်",
+          off_duty: "ပိတ်ထားသည်",
+        });
+    head.append(title, badge);
     card.append(head);
 
     const phoneLine = node("div", "muted");
@@ -429,26 +627,80 @@ function renderDrivers(data) {
       phoneLine.textContent = "ဖုန်းနံပါတ် မရှိ";
     }
     card.append(phoneLine);
-    card.append(
-      node("div", "segment-meta", driver.vehicle ? `ကား: ${driver.vehicle}` : "ကား မသတ်မှတ်ထား")
-    );
-    if (driver.queue) {
+    if (driver.role === "driver") {
       card.append(
-        node(
-          "div",
-          "segment-meta",
-          `တန်းစီ: ${driver.queue.point || "ကားလဲနေရာ"} · ${
-            driver.queue.seats_free
-          } ခု လွတ် · ${dateTime(driver.queue.joined_at)} ကတည်းက`
-        )
+        node("div", "segment-meta", driver.vehicle ? `ကား: ${driver.vehicle}` : "ကား မသတ်မှတ်ထား")
       );
+      if (driver.queue) {
+        card.append(
+          node(
+            "div",
+            "segment-meta",
+            `တန်းစီ: ${driver.queue.point || "ကားလဲနေရာ"} · ${
+              driver.queue.seats_free
+            } ခု လွတ် · ${dateTime(driver.queue.joined_at)} ကတည်းက`
+          )
+        );
+      }
+    }
+    if (state.me && state.me.user.role === "owner") {
+      const actions = node("div", "booking-actions");
+      actions.append(
+        button("ပြင်ရန်", "btn ghost small", () => editStaff(driver)),
+        button("ဖျက်ရန်", "btn danger small", () => deleteStaff(driver))
+      );
+      card.append(actions);
     }
     list.append(card);
   });
 }
 
 async function loadDrivers() {
-  renderDrivers(await api("/api/drivers"));
+  renderDrivers(await api("/api/staff"));
+}
+
+function editStaff(staff) {
+  const form = $("#staff-edit-form");
+  form.elements.staff_id.value = String(staff.id);
+  form.elements.name.value = staff.name;
+  form.elements.phone.value = staff.phone || "";
+  $("#staff-dialog").showModal();
+  form.elements.name.focus();
+  form.elements.name.select();
+}
+
+async function saveStaff(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const staffId = form.elements.staff_id.value;
+  try {
+    await api(`/api/staff/${staffId}`, {
+      method: "PATCH",
+      body: {
+        name: form.elements.name.value.trim(),
+        phone: form.elements.phone.value.trim() || null,
+      },
+    });
+    $("#staff-dialog").close();
+    toast("ဝန်ထမ်းအချက်အလက် သိမ်းပြီးပါပြီ။");
+    await loadDrivers();
+  } catch (error) {
+    if (!error.auth) toast(error.message, true);
+  }
+}
+
+async function deleteStaff(staff) {
+  const confirmed = await confirmAction(
+    `${staff.name} ကို ဝန်ထမ်းစာရင်းမှ အပြီးဖျက်မှာ သေချာပါသလား? ခရီးမောင်းမှတ်တမ်းရှိပါက backend က ဖျက်ခွင့်မပြုပါ။`
+  );
+  if (!confirmed) return;
+  try {
+    await api(`/api/staff/${staff.id}`, { method: "DELETE" });
+    toast(`${staff.name} ကို ဖျက်ပြီးပါပြီ။`);
+    await loadDrivers();
+  } catch (error) {
+    if (!error.auth) toast(error.message, true);
+  }
 }
 
 /* -------------------------------------------------------------------------- */
@@ -802,12 +1054,24 @@ function wireEvents() {
   document.querySelectorAll(".tab").forEach((element) => {
     element.addEventListener("click", () => switchTab(element.dataset.tab));
   });
+  $("#booking-form").elements.route_id.addEventListener("change", () => {
+    const route = state.routes.find(
+      (item) => String(item.id) === $("#booking-form").elements.route_id.value
+    );
+    renderBookingRoadOptions(route);
+  });
+  $("#booking-form").elements.passenger_count.addEventListener(
+    "input",
+    updateBookingFarePreview
+  );
   $("#booking-status").addEventListener("change", () => {
     loadBookings().catch((error) => {
       if (!error.auth) toast(error.message, true);
     });
   });
   $("#booking-form").addEventListener("submit", createBooking);
+  $("#sheet-guest-search").addEventListener("input", searchSheetGuests);
+  $("#booking-cancel-edit").addEventListener("click", resetBookingEditor);
   $("#refresh").addEventListener("click", refreshActive);
   $("#gate-retry").addEventListener("click", () => window.location.reload());
   $("#route-form").addEventListener("submit", addRoute);
@@ -820,13 +1084,20 @@ function wireEvents() {
   });
   $("#route-edit-form").addEventListener("submit", saveRouteName);
   $("#route-cancel").addEventListener("click", () => $("#route-dialog").close());
+  $("#staff-edit-form").addEventListener("submit", saveStaff);
+  $("#staff-cancel").addEventListener("click", () => $("#staff-dialog").close());
+  $("#staff-dialog").addEventListener("click", (event) => {
+    if (event.target === $("#staff-dialog")) $("#staff-dialog").close();
+  });
   $("#route-dialog").addEventListener("click", (event) => {
     if (event.target === $("#route-dialog")) $("#route-dialog").close();
   });
 
   window.setInterval(() => {
     const dialogOpen =
-      $("#segment-dialog").open || $("#route-dialog").open;
+      $("#segment-dialog").open ||
+      $("#route-dialog").open ||
+      $("#staff-dialog").open;
     if (
       document.visibilityState === "visible" &&
       $("#gate").hidden &&

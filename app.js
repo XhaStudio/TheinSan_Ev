@@ -232,20 +232,20 @@ function bookingCard(booking) {
   const footer = node("div", "card-footer");
   footer.append(node("span", "muted", "စုစုပေါင်း ခရီးခ"), node("strong", "", money(booking.total_fare)));
   card.append(footer);
-  if (
+  // Editing stops as soon as dispatch starts, but deleting stays available for
+  // every booking: an in-progress one is removed after the confirm prompt.
+  const editable =
     booking.status === "new" &&
     booking.segments.every(
       (segment) =>
         segment.status === "pending" && !segment.driver && !segment.vehicle
-    )
-  ) {
-    const actions = node("div", "booking-actions");
-    actions.append(
-      button("✎ ဘွတ်ကင်ပြင်", "btn ghost small", () => editBooking(booking)),
-      button("ဖျက်မည်", "btn danger small", () => deleteBooking(booking))
     );
-    card.append(actions);
+  const actions = node("div", "booking-actions");
+  if (editable) {
+    actions.append(button("✎ ဘွတ်ကင်ပြင်", "btn ghost small", () => editBooking(booking)));
   }
+  actions.append(button("ဖျက်မည်", "btn danger small", () => deleteBooking(booking)));
+  card.append(actions);
   return card;
 }
 
@@ -454,8 +454,10 @@ function resetBookingEditor() {
 }
 
 async function deleteBooking(booking) {
+  const note = booking.status === "new" ? "" : " (လုပ်ဆောင်နေသည်)";
   const confirmed = await confirmAction(
-    `ဘွတ်ကင် #${booking.id} (${booking.customer_name}) ကို အပြီးဖျက်မှာ သေချာပါသလား? ပြန်ယူ၍မရပါ။`
+    `ဘွတ်ကင် #${booking.id} (${booking.customer_name})${note} ကို အပြီးဖျက်မှာ သေချာပါသလား? ` +
+      "ကား/ယာဉ်မောင်း သတ်မှတ်ထားရင်လည်း အတူ ဖျက်သွားပါမယ်။ ပြန်ယူ၍ မရပါ။"
   );
   if (!confirmed) return;
 

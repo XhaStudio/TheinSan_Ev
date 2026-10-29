@@ -17,6 +17,7 @@
       <button id="gate-retry" class="btn" type="button" hidden>ထပ်စမ်းကြည့်</button>
     </div>
   </div>
+
   <div id="app" hidden>
     <header class="topbar">
       <div class="identity">
@@ -30,19 +31,25 @@
       <button class="tab is-active" type="button" data-tab="bookings">ဘွတ်ကင်</button>
       <button class="tab" type="button" data-tab="queue">တန်းစီ</button>
       <button class="tab" type="button" data-tab="vehicles">ယာဉ်များ</button>
-      <button class="tab" type="button" data-tab="drivers">ယာဉ်မောင်းများ</button>
+      <button class="tab" type="button" data-tab="drivers">ဝန်ထမ်းများ</button>
       <button class="tab" type="button" data-tab="routes">လမ်းကြောင်းများ</button>
     </nav>
 
     <main>
       <section class="panel" data-panel="bookings">
         <form id="booking-form" class="card booking-form">
+          <input name="booking_id" type="hidden">
           <div class="booking-form-title">
             <div>
-              <h2>➕ ဘွတ်ကင်အသစ်</h2>
+              <h2 id="booking-form-title">➕ ဘွတ်ကင်အသစ်</h2>
               <p class="muted">ခရီးသည်တစ်စုကို ဘွတ်ကင်တစ်ခုအဖြစ် မှတ်တမ်းတင်ပါ။</p>
             </div>
           </div>
+          <label class="field">
+            <span>Google Sheets မှ ဧည့်သည် ရှာရန် <span class="muted">(ချိတ်ထားပါက)</span></span>
+            <input id="sheet-guest-search" type="search" maxlength="100" autocomplete="off" placeholder="အမည် သို့မဟုတ် ဖုန်းနံပါတ်ကို ရိုက်ပါ">
+          </label>
+          <div id="sheet-guest-results" class="sheet-guest-results" aria-live="polite" hidden></div>
           <label class="field">
             <span>ခရီးသည်အမည်</span>
             <input name="customer_name" type="text" minlength="2" maxlength="120" autocomplete="name" placeholder="ဥပမာ - မောင်မောင်" required>
@@ -52,11 +59,17 @@
             <input name="customer_phone" type="tel" maxlength="32" autocomplete="tel" inputmode="tel" placeholder="ဥပမာ - 09 123 456 789">
           </label>
           <label class="field">
-            <span>သွားမည့်လမ်းကြောင်း</span>
+            <span>လမ်းကြောင်းအုပ်စု</span>
             <select name="route_id" required>
-              <option value="">လမ်းကြောင်းရွေးပါ…</option>
+              <option value="">လမ်းကြောင်းအုပ်စု ရွေးပါ…</option>
             </select>
           </label>
+          <fieldset id="booking-roads" class="booking-roads" hidden>
+            <legend>ခရီးသည်သွားမည့် လမ်းပိုင်း</legend>
+            <p class="muted">သွားမည့်လမ်းပိုင်း တစ်ခု သို့မဟုတ် ဆက်တိုက်ဖြစ်သော လမ်းပိုင်းများကို ရွေးပါ။</p>
+            <div id="booking-road-options" class="booking-road-options"></div>
+            <div id="booking-fare-preview" class="booking-fare-preview" aria-live="polite"></div>
+          </fieldset>
           <div class="booking-form-row">
             <label class="field">
               <span>ခရီးသည်ဦးရေ</span>
@@ -67,8 +80,11 @@
               <input name="pickup_time" type="datetime-local" required>
             </label>
           </div>
-          <p class="form-hint">မှတ်ချက် - ဘွတ်ကင်သိမ်းပြီးနောက် ကား/ယာဉ်မောင်းကို ဒစ်စပက်ချာက သတ်မှတ်ပေးရပါမည်။</p>
-          <button id="booking-submit" class="btn" type="submit">ဘွတ်ကင်သိမ်းမည်</button>
+          <p class="form-hint">ရွေးထားသော လမ်းပိုင်းအတွက်သာ ခရီးခနှင့် ကားအဆင့်များ ဖန်တီးမည်။ ဘွတ်ကင်သိမ်းပြီးနောက် ကား/ယာဉ်မောင်းကို သတ်မှတ်နိုင်ပါသည်။</p>
+          <div class="booking-actions">
+            <button id="booking-submit" class="btn" type="submit">ဘွတ်ကင်သိမ်းမည်</button>
+            <button id="booking-cancel-edit" class="btn ghost" type="button" hidden>မပြင်တော့ပါ</button>
+          </div>
         </form>
         <div class="toolbar">
           <label class="field inline">
@@ -95,6 +111,7 @@
       </section>
 
       <section class="panel" data-panel="drivers" hidden>
+        <p class="form-hint">ဝန်ထမ်းအမည်၊ ဖုန်းနံပါတ်နှင့် ယာဉ်မောင်းအခြေအနေများကို ကြည့်ရှုပါ။ ပိုင်ရှင်က အမည်/ဖုန်း ပြင်ခြင်းနှင့် ဖျက်ခြင်း လုပ်နိုင်ပါသည်။</p>
         <div id="drivers-list" class="grid"></div>
       </section>
 
@@ -166,6 +183,25 @@
       <div class="dialog-actions">
         <button id="route-cancel" class="btn ghost" type="button">ပယ်ဖျက်</button>
         <button class="btn" type="submit">သိမ်း</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="staff-dialog">
+    <form id="staff-edit-form">
+      <h2>ဝန်ထမ်းအချက်အလက် ပြင်ရန်</h2>
+      <input type="hidden" name="staff_id">
+      <label class="field">
+        <span>အမည်</span>
+        <input name="name" type="text" minlength="2" maxlength="120" required>
+      </label>
+      <label class="field">
+        <span>ဖုန်းနံပါတ် (မဖြည့်လည်းရသည်)</span>
+        <input name="phone" type="tel" maxlength="32" inputmode="tel" placeholder="09 123 456 789">
+      </label>
+      <div class="dialog-actions">
+        <button id="staff-cancel" class="btn ghost" type="button">မပြင်တော့ပါ</button>
+        <button class="btn" type="submit">သိမ်းမည်</button>
       </div>
     </form>
   </dialog>

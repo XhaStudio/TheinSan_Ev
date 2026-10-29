@@ -255,6 +255,15 @@ function selectedBookingRoads() {
     .filter(Number.isFinite);
 }
 
+// Any combination of legs is allowed: a passenger may ride only some of the
+// route's roads, in any order they tick them. Nothing here blocks a selection.
+function showBookingHint(message) {
+  const preview = $("#booking-fare-preview");
+  preview.textContent = message;
+  preview.classList.add("warn");
+  preview.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
 function updateBookingFarePreview() {
   const route = state.routes.find(
     (item) => String(item.id) === $("#booking-form").elements.route_id.value
@@ -269,6 +278,7 @@ function updateBookingFarePreview() {
     0
   );
   const preview = $("#booking-fare-preview");
+  preview.classList.remove("warn");
   if (!selectedSegments.length) {
     preview.textContent = "လမ်းပိုင်းရွေးပါ။";
     return;
@@ -293,19 +303,7 @@ function renderBookingRoadOptions(route, selectedIds = []) {
     checkbox.name = "segment_ids";
     checkbox.value = String(segment.id);
     checkbox.checked = selected.has(segment.id);
-    checkbox.addEventListener("change", () => {
-      const selectedIds = new Set(selectedBookingRoads());
-      const selectedRoads = route.segments.filter((item) => selectedIds.has(item.id));
-      const positions = selectedRoads.map((item) => item.sequence);
-      const isContinuous = positions.every(
-        (position, index) => index === 0 || position === positions[index - 1] + 1
-      );
-      if (!isContinuous) {
-        checkbox.checked = !checkbox.checked;
-        toast("ခရီးသည်သွားမည့် လမ်းပိုင်းများသည် ဆက်တိုက်ဖြစ်ရပါမည်", true);
-      }
-      updateBookingFarePreview();
-    });
+    checkbox.addEventListener("change", updateBookingFarePreview);
     const details = node("span", "booking-road-details");
     details.append(
       node("strong", "", `${segment.from_location} → ${segment.to_location}`),
@@ -487,8 +485,9 @@ async function createBooking(event) {
   if (!payload.customer_name || !payload.route_id || !payload.pickup_time) {
     toast("အမည်၊ လမ်းကြောင်းအုပ်စုနှင့် ကြိုယူချိန်ကို ဖြည့်ပါ", true);
     return;
-  }  if (!payload.segment_ids.length) {
-    toast("ခရီးသည်သွားမည့် လမ်းပိုင်း အနည်းဆုံးတစ်ခု ရွေးပါ", true);
+  }
+  if (!payload.segment_ids.length) {
+    showBookingHint("ခရီးသည်သွားမည့် လမ်းပိုင်း တစ်ခု ရွေးပါ။");
     return;
   }
   submit.disabled = true;
@@ -607,6 +606,9 @@ function renderDrivers(data) {
     const head = node("div", "row between wrap");
     const title = node("div", "stack-tight");
     title.append(node("div", "card-title", driver.name));
+    if (driver.telegram_username) {
+      title.append(node("div", "muted", `@${driver.telegram_username}`));
+    }
     title.append(node("div", "muted", ROLE_LABELS[driver.role] || driver.role));
     if (!driver.active) title.append(node("div", "muted", "ပိတ်ထားသည်"));
     const badge = driver.status

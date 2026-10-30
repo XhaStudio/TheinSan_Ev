@@ -409,6 +409,11 @@ h3 {
   font-weight: 700;
 }
 
+.booking-fare-preview.warn {
+  color: var(--warn);
+  font-weight: 600;
+}
+
 .toolbar {
   display: flex;
   align-items: center;
@@ -861,7 +866,8 @@ dialog::backdrop {
   background: rgba(0, 0, 0, 0.48);
 }
 
-dialog form {
+dialog form,
+dialog > .stack {
   padding: 20px;
 }
 
@@ -874,6 +880,52 @@ dialog h2 {
   justify-content: flex-end;
   gap: 8px;
   margin-top: 18px;
+}
+
+.assign-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 46vh;
+  overflow-y: auto;
+}
+
+.assign-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.assign-option:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+.assign-option:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.assign-option-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.assign-option-go {
+  color: var(--muted);
+  font-size: 13px;
+  white-space: nowrap;
 }
 
 .toast {

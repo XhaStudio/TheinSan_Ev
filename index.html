@@ -30,6 +30,7 @@
     <nav class="tabs" aria-label="အပိုင်းများ">
       <button class="tab is-active" type="button" data-tab="bookings">ဘွတ်ကင်</button>
       <button class="tab" type="button" data-tab="queue">တန်းစီ</button>
+      <button class="tab" type="button" data-tab="pairs">ကားချိန်း</button>
       <button class="tab" type="button" data-tab="vehicles">ယာဉ်များ</button>
       <button class="tab" type="button" data-tab="drivers">ဝန်ထမ်းများ</button>
       <button class="tab" type="button" data-tab="routes">လမ်းကြောင်းများ</button>
@@ -104,6 +105,20 @@
 
       <section class="panel" data-panel="queue" hidden>
         <div id="queue-list" class="stack"></div>
+      </section>
+
+      <section class="panel" data-panel="pairs" hidden>
+        <p class="form-hint">
+          သီပေါတံတားကို ဖြတ်၍ မရသဖြင့် ဟိုဘက်ဒီဘက်ကား ခရီးသည်လဲကြရသည်။
+          အတွဲတစ်ခုစီတွင် 🚗 လားရှိုးကား၊ ⬇️ အဆင်းစီနီယာကားနှင့်
+          ⬆️ ခရီးသည်ပြောင်းမည့် အထက်ကားကို သတ်မှတ်ထားပါ။
+          ဤစာရင်းကို နှိပ်လိုက်တာနှင့် Telegram group သို့ တစ်ခါတည်း ပို့နိုင်ပါသည်။
+        </p>
+        <div class="toolbar">
+          <button id="pair-add" class="btn small" type="button">+ အတွဲအသစ်</button>
+          <button id="pair-send" class="btn ghost small" type="button">📤 Group သို့ ပို့</button>
+        </div>
+        <div id="pairs-list" class="stack"></div>
       </section>
 
       <section class="panel" data-panel="vehicles" hidden>
@@ -202,6 +217,53 @@
       <div class="dialog-actions">
         <button id="staff-cancel" class="btn ghost" type="button">မပြင်တော့ပါ</button>
         <button class="btn" type="submit">သိမ်းမည်</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="assign-dialog">
+    <div class="stack">
+      <h2 id="assign-title">ကားသတ်မှတ်ရန်</h2>
+      <p class="form-hint" id="assign-subtitle"></p>
+      <div id="assign-list" class="assign-list"></div>
+      <div class="dialog-actions">
+        <button id="assign-cancel" class="btn ghost" type="button">ပိတ်</button>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog id="pair-dialog">
+    <form id="pair-form">
+      <h2>ကားအတွဲ</h2>
+      <input type="hidden" name="pair_id">
+      <label class="field">
+        <span>ကားလဲနေရာ</span>
+        <select name="location_id" required></select>
+      </label>
+      <label class="field">
+        <span>အတွဲအမည်</span>
+        <input name="label" type="text" maxlength="32" placeholder="ဥပမာ - အတွဲ (၆)">
+      </label>
+      <label class="field">
+        <span>🚗 လားရှိုးကား (ခရီးသည် တင်လာသောကား)</span>
+        <select name="lashio_vehicle_id"></select>
+      </label>
+      <label class="field">
+        <span>⬇️ အဆင်းစီနီယာကား</span>
+        <select name="senior_vehicle_id"></select>
+      </label>
+      <label class="field">
+        <span>⬆️ ခရီးသည်ပြောင်းမည့် အထက်ကား</span>
+        <select name="upper_vehicle_id"></select>
+      </label>
+      <label class="field">
+        <span>မှတ်ချက် (မဖြည့်လည်းရသည်)</span>
+        <input name="note" type="text" maxlength="200" placeholder="ဥပမာ - ၆:၀၀ AM ထွက်">
+      </label>
+      <label class="check"><input name="is_active" type="checkbox" checked> ဤအတွဲကို အသုံးပြုမည်</label>
+      <div class="dialog-actions">
+        <button id="pair-cancel" class="btn ghost" type="button">ပယ်ဖျက်</button>
+        <button class="btn" type="submit">သိမ်း</button>
       </div>
     </form>
   </dialog>

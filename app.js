@@ -7,7 +7,6 @@ const API_BASE = (window.MINIAPP_API_BASE || "").trim().replace(/\/+$/, "");
 const tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
 
 const BOOKING_LABELS = {
-  
   new: "အသစ်",
   in_progress: "လုပ်ဆောင်နေသည်",
   completed: "ပြီးစီး",
@@ -276,6 +275,51 @@ function showBookingHint(message) {
   preview.scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
 
+// Seat picker: အရှေ့ခုံ / အနောက်ခုံ. `passenger_count` stays the single value
+// the API knows; it is the sum of the ticked seat rows.
+const SEAT_ROWS = [
+  { check: "front_checked", count: "front_count" },
+  { check: "back_checked", count: "back_count" },
+];
+
+function seatTotal() {
+  const form = $("#booking-form");
+  let total = 0;
+  SEAT_ROWS.forEach(({ check, count }) => {
+    const picked = form.elements[check].checked;
+    const input = form.elements[count];
+    input.disabled = !picked;
+    if (!picked) return;
+    const value = Math.max(0, Math.floor(Number(input.value) || 0));
+    input.value = String(value);
+    total += value;
+  });
+  return total;
+}
+
+function syncSeatTotal() {
+  const form = $("#booking-form");
+  const total = seatTotal();
+  form.elements.passenger_count.value = String(total || 1);
+  $("#seat-total").textContent = total
+    ? `စုစုပေါင်း ${total} ဦး`
+    : "ခုံ တစ်ခုခု ရွေးပြီး ဦးရေ ထည့်ပါ";
+  return total;
+}
+
+// Used when editing a saved booking or resetting: the split is not stored, so
+// 1 goes to the front seat and the rest to the back.
+function setSeatTotal(total) {
+  const form = $("#booking-form");
+  const passengers = Math.max(1, Math.min(20, Number(total) || 1));
+  const back = passengers - 1;
+  form.elements.front_checked.checked = true;
+  form.elements.front_count.value = "1";
+  form.elements.back_checked.checked = back > 0;
+  form.elements.back_count.value = String(back);
+  syncSeatTotal();
+}
+
 function updateBookingFarePreview() {
   const route = state.routes.find(
     (item) => String(item.id) === $("#booking-form").elements.route_id.value
@@ -298,12 +342,52 @@ function updateBookingFarePreview() {
   preview.textContent = `ရွေးထားသော ${selectedSegments.length} လမ်းပိုင်း · စုစုပေါင်း ${money(total)}`;
 }
 
+// Route whose first leg is being added from the booking form; after saving we
+// keep that route selected and tick the new leg so the booking can go on.
+let roadFixRouteId = null;
+
+async function addRoadFromBooking(route) {
+  roadFixRouteId = route.id;
+  try {
+    if (state.locations.length < 2) {
+      const data = await api("/api/locations");
+      state.locations = data.items;
+    }
+  } catch (error) {
+    roadFixRouteId = null;
+    if (!error.auth) toast(error.message, true);
+    return;
+  }
+  openSegmentDialog(route, null);
+}
+
 function renderBookingRoadOptions(route, selectedIds = []) {
   const fieldset = $("#booking-roads");
   const options = $("#booking-road-options");
+  const preview = $("#booking-fare-preview");
   options.replaceChildren();
-  if (!route || !route.segments.length) {
+  if (!route) {
     fieldset.hidden = true;
+    preview.textContent = "";
+    preview.classList.remove("warn");
+    return;
+  }
+  // A route without legs is still selectable: the booking needs one leg, so
+  // offer to add it here instead of blocking the whole route group.
+  if (!route.segments.length) {
+    fieldset.hidden = false;
+    const empty = node("div", "booking-road-empty");
+    empty.append(
+      node(
+        "p",
+        "muted",
+        "ဤလမ်းကြောင်းတွင် လမ်းပိုင်း (အဆင့်) မရှိသေးပါ။ ခရီးခ တွက်ရန် အနည်းဆုံး တစ်ခု လိုပါသည်။"
+      ),
+      button("＋ လမ်းပိုင်း ထည့်", "btn ghost small", () => addRoadFromBooking(route))
+    );
+    options.append(empty);
+    preview.textContent = "လမ်းပိုင်း ထည့်ပြီးမှ ရွေးနိုင်ပါမည်။";
+    preview.classList.add("warn");
     return;
   }
   fieldset.hidden = false;
@@ -336,7 +420,6 @@ function renderBookingRouteOptions() {
       `${route.name}${route.segments.length ? ` · ${route.segments.length} လမ်းပိုင်း` : " · အဆင့်မရှိသေး"}`,
       String(route.id)
     );
-    option.disabled = route.segments.length === 0;
     option.selected = String(route.id) === selected;
     select.append(option);
   });
@@ -502,7 +585,7 @@ function editBooking(booking) {
   form.elements.customer_name.value = booking.customer_name;
   form.elements.customer_phone.value = booking.customer_phone || "";
   form.elements.route_id.value = String(booking.route_id);
-  form.elements.passenger_count.value = String(booking.passengers);
+  setSeatTotal(booking.passengers);
   const pickup = new Date(booking.pickup_time);
   pickup.setMinutes(pickup.getMinutes() - pickup.getTimezoneOffset());
   form.elements.pickup_time.value = pickup.toISOString().slice(0, 16);
@@ -522,7 +605,7 @@ function resetBookingEditor() {
   form.reset();
   form.elements.booking_id.value = "";
   form.elements.route_id.value = "";
-  form.elements.passenger_count.value = "1";
+  setSeatTotal(3);
   renderBookingRoadOptions(null);
   $("#booking-form-title").textContent = "➕ ဘွတ်ကင်အသစ်";
   $("#booking-submit").textContent = "ဘွတ်ကင်သိမ်းမည်";
@@ -553,6 +636,7 @@ async function createBooking(event) {
   const submit = $("#booking-submit");
   const selectedSegmentIds = selectedBookingRoads();
   const bookingId = form.elements.booking_id.value;
+  const seats = syncSeatTotal();
   const payload = {
     customer_name: form.elements.customer_name.value.trim(),
     customer_phone: form.elements.customer_phone.value.trim() || null,
@@ -565,8 +649,14 @@ async function createBooking(event) {
     toast("အမည်၊ လမ်းကြောင်းအုပ်စုနှင့် ကြိုယူချိန်ကို ဖြည့်ပါ", true);
     return;
   }
+  if (!seats) {
+    toast("အရှေ့ခုံ သို့မဟုတ် အနောက်ခုံကို ရွေးပြီး ဦးရေ ထည့်ပါ", true);
+    return;
+  }
   if (!payload.segment_ids.length) {
-    showBookingHint("ခရီးသည်သွားမည့် လမ်းပိုင်း တစ်ခု ရွေးပါ။");
+    showBookingHint(
+      "ခရီးသည်သွားမည့် လမ်းပိုင်း တစ်ခု ရွေးပါ။ လမ်းပိုင်း မရှိသေးရင် “＋ လမ်းပိုင်း ထည့်” နှိပ်ပြီး အရင်ထည့်ပါ။"
+    );
     return;
   }
   submit.disabled = true;
@@ -1213,6 +1303,18 @@ async function saveSegment(event) {
     $("#segment-dialog").close();
     toast("အဆင့် သိမ်းပြီးပါပြီ");
     await loadRoutes();
+    if (roadFixRouteId !== null) {
+      const fixed = state.routes.find((item) => item.id === roadFixRouteId);
+      roadFixRouteId = null;
+      if (fixed) {
+        $("#booking-form").elements.route_id.value = String(fixed.id);
+        renderBookingRouteOptions();
+        renderBookingRoadOptions(
+          state.routes.find((item) => item.id === fixed.id),
+          fixed.segments.map((segment) => segment.id)
+        );
+      }
+    }
   } catch (error) {
     if (!error.auth) toast(error.message, true);
   }
@@ -1273,7 +1375,14 @@ const loaders = {
 };
 
 async function loadTab(tab) {
-  await loaders[tab]();
+  // A stale cached app.js can be paired with a newer index.html (new tab name).
+  // Fail with a readable hint instead of "loaders[tab] is not a function".
+  const loader = loaders[tab];
+  if (typeof loader !== "function") {
+    toast("အက်ပ်ဗားရှင်း အသစ် မရောက်သေးပါ — Telegram ကို ပိတ်ပြီး ပြန်ဖွင့်ပါ။", true);
+    return;
+  }
+  await loader();
 }
 
 async function switchTab(tab) {
@@ -1310,10 +1419,17 @@ function wireEvents() {
     );
     renderBookingRoadOptions(route);
   });
-  $("#booking-form").elements.passenger_count.addEventListener(
-    "input",
-    updateBookingFarePreview
-  );
+  SEAT_ROWS.forEach(({ check, count }) => {
+    [check, count].forEach((name) => {
+      const input = $("#booking-form").elements[name];
+      const onChange = () => {
+        syncSeatTotal();
+        updateBookingFarePreview();
+      };
+      input.addEventListener("input", onChange);
+      input.addEventListener("change", onChange);
+    });
+  });
   $("#booking-status").addEventListener("change", () => {
     loadBookings().catch((error) => {
       if (!error.auth) toast(error.message, true);
@@ -1369,6 +1485,7 @@ function wireEvents() {
 
 async function init() {
   wireEvents();
+  syncSeatTotal();
   if (tg) {
     tg.ready();
     tg.expand();

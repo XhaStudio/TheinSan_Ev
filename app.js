@@ -7,6 +7,7 @@ const API_BASE = (window.MINIAPP_API_BASE || "").trim().replace(/\/+$/, "");
 const tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
 
 const BOOKING_LABELS = {
+  
   new: "အသစ်",
   in_progress: "လုပ်ဆောင်နေသည်",
   completed: "ပြီးစီး",

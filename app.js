@@ -51,6 +51,8 @@ const state = {
   locations: [],
   routes: [],
   bookings: [],
+  vehicles: [],
+  pairs: [],
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -225,6 +227,15 @@ function bookingCard(booking) {
       : "မသတ်မှတ်ရသေး";
     meta.append(node("span", "", assigned), node("span", "", money(segment.fare)));
     leg.append(line, meta);
+    // Assignment is possible while the leg waits, and can still be overridden
+    // while the offered driver has not accepted yet.
+    if (segment.status === "pending" || segment.status === "assigned") {
+      leg.append(
+        button("🚗 ကားသတ်မှတ်", "btn ghost small", () =>
+          openAssignDialog(booking, segment)
+        )
+      );
+    }
     legs.append(leg);
   });
   card.append(legs);
@@ -351,6 +362,71 @@ function renderBookings(data) {
     return;
   }
   data.items.forEach((booking) => list.append(bookingCard(booking)));
+}
+
+let assignTarget = null;
+
+async function openAssignDialog(booking, segment) {
+  assignTarget = { booking, segment };
+  $("#assign-title").textContent = `ဘွတ်ကင် #${booking.id} · အဆင့် ${segment.sequence} ကားသတ်မှတ်`;
+  $("#assign-subtitle").textContent =
+    `${segment.from_location} → ${segment.to_location} · ခရီးသည် ${booking.passengers} ဦး`;
+  const list = $("#assign-list");
+  list.replaceChildren(node("div", "muted", "ရနိုင်သော ကားများ ရှာနေသည်…"));
+  $("#assign-dialog").showModal();
+  try {
+    const data = await api("/api/dispatch/available-vehicles");
+    const fit = data.items.filter(
+      (car) => Number(car.seats) >= Number(booking.passengers)
+    );
+    list.replaceChildren();
+    if (!fit.length) {
+      list.append(
+        empty(
+          "ထိုင်ခုံလုံလောက်ပြီး ရနိုင်သော ကား မရှိပါ။ ယာဉ်မောင်း အွန်လိုင်းဖြစ်ခြင်း၊ ကား အားလပ်ခြင်းကို စစ်ပါ။"
+        )
+      );
+      return;
+    }
+    fit.forEach((car) => {
+      const option = node("button", "assign-option");
+      option.type = "button";
+      const main = node("span", "assign-option-main");
+      main.append(
+        node("strong", "", `${car.plate} · ${car.driver}`),
+        node("span", "muted", `${car.model} · ထိုင်ခုံ ${car.seats} ခု လွတ်`)
+      );
+      option.append(main, node("span", "assign-option-go", "သတ်မှတ် →"));
+      option.addEventListener("click", () => assignVehicle(car));
+      list.append(option);
+    });
+  } catch (error) {
+    if (error.auth) return;
+    list.replaceChildren(node("div", "muted", error.message));
+  }
+}
+
+async function assignVehicle(car) {
+  if (!assignTarget) return;
+  const { segment } = assignTarget;
+  const options = Array.from($("#assign-list").querySelectorAll("button"));
+  options.forEach((option) => {
+    option.disabled = true;
+  });
+  try {
+    await api(`/api/booking-segments/${segment.id}/assign`, {
+      method: "POST",
+      body: { vehicle_id: car.id },
+    });
+    $("#assign-dialog").close();
+    toast(`${car.plate} (${car.driver}) ကို အဆင့် ${segment.sequence} တွင် သတ်မှတ်ပြီးပါပြီ။`);
+    await loadBookings();
+  } catch (error) {
+    options.forEach((option) => {
+      option.disabled = false;
+    });
+    if (!error.auth) toast(error.message, true);
+  }
 }
 
 let sheetSearchTimer = null;
@@ -708,6 +784,174 @@ async function deleteStaff(staff) {
 }
 
 /* -------------------------------------------------------------------------- */
+/* bridge pairs: which cars swap passengers with which                        */
+/* -------------------------------------------------------------------------- */
+function pairCard(pair) {
+  const card = node("article", "card");
+  const head = node("div", "row between wrap");
+  head.append(
+    node("div", "card-title", pair.label || `အတွဲ #${pair.id}`),
+    statusBadge(pair.is_active ? "completed" : "cancelled", {
+      completed: "အသုံးပြုနေသည်",
+      cancelled: "ပိတ်ထားသည်",
+    })
+  );
+  card.append(head);
+  card.append(node("div", "muted", pair.location || "ကားလဲနေရာ"));
+
+  const lines = node("div", "stack-tight");
+  lines.append(
+    node("div", "", `🚗 လားရှိုးကား: ${pair.lashio_vehicle || "—"}`),
+    node("div", "", `⬇️ အဆင်းစီနီယာကား: ${pair.senior_vehicle || "—"}`),
+    node("div", "", `⬆️ ခရီးသည်ပြောင်းမည့် အထက်ကား: ${pair.upper_vehicle || "—"}`)
+  );
+  if (pair.note) lines.append(node("div", "muted", `📝 ${pair.note}`));
+  card.append(lines);
+
+  if (state.me && state.me.user.role === "owner") {
+    const actions = node("div", "booking-actions");
+    actions.append(
+      button("ပြင်", "btn ghost small", () => openPairDialog(pair)),
+      button("ဖျက်", "btn danger small", () => deletePair(pair))
+    );
+    card.append(actions);
+  }
+  return card;
+}
+
+function renderPairs() {
+  const list = $("#pairs-list");
+  list.replaceChildren();
+  if (!state.pairs.length) {
+    list.append(
+      empty("အတွဲ မသတ်မှတ်ရသေးပါ။ “+ အတွဲအသစ်” နှိပ်ပြီး ကားများ ရွေးပါ။")
+    );
+    return;
+  }
+  state.pairs.forEach((pair) => list.append(pairCard(pair)));
+}
+
+async function loadPairs() {
+  const [pairs, locations, vehicles] = await Promise.all([
+    api("/api/transfer-pairs"),
+    api("/api/locations"),
+    api("/api/vehicles"),
+  ]);
+  state.pairs = pairs.items;
+  state.locations = locations.items;
+  state.vehicles = vehicles.items;
+  renderPairs();
+}
+
+function fillPairVehicles(select, selectedId) {
+  select.replaceChildren(new Option("— မရွေး —", ""));
+  state.vehicles.forEach((vehicle) => {
+    const label = vehicle.driver
+      ? `${vehicle.plate} · ${vehicle.driver}`
+      : vehicle.plate;
+    const option = new Option(label, String(vehicle.id));
+    option.selected = vehicle.id === selectedId;
+    select.append(option);
+  });
+}
+
+function openPairDialog(pair) {
+  const points = state.locations.filter((location) => location.is_transfer_point);
+  const choices = points.length ? points : state.locations.slice();
+  // A pair saved before its point was unflagged must stay selectable.
+  if (pair && !choices.some((location) => location.id === pair.location_id)) {
+    const own = state.locations.find((location) => location.id === pair.location_id);
+    if (own) choices.push(own);
+  }
+  if (!choices.length) {
+    toast("အရင်ဆုံး ကားလဲနေရာ (တည်နေရာ) တစ်ခု သတ်မှတ်ပါ", true);
+    return;
+  }
+  const form = $("#pair-form");
+  form.reset();
+  const locationSelect = form.elements.location_id;
+  locationSelect.replaceChildren();
+  choices.forEach((location) => {
+    const option = new Option(location.name, String(location.id));
+    option.selected = pair ? location.id === pair.location_id : choices.length === 1;
+    locationSelect.append(option);
+  });
+  form.elements.pair_id.value = pair ? String(pair.id) : "";
+  form.elements.label.value = pair && pair.label ? pair.label : "";
+  fillPairVehicles(form.elements.lashio_vehicle_id, pair ? pair.lashio_vehicle_id : null);
+  fillPairVehicles(form.elements.senior_vehicle_id, pair ? pair.senior_vehicle_id : null);
+  fillPairVehicles(form.elements.upper_vehicle_id, pair ? pair.upper_vehicle_id : null);
+  form.elements.note.value = pair && pair.note ? pair.note : "";
+  form.elements.is_active.checked = pair ? Boolean(pair.is_active) : true;
+  $("#pair-dialog").showModal();
+}
+
+async function savePair(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const pairId = form.elements.pair_id.value;
+  const edited = state.pairs.find((pair) => String(pair.id) === pairId);
+  const cars = [
+    "lashio_vehicle_id",
+    "senior_vehicle_id",
+    "upper_vehicle_id",
+  ].map((name) => {
+    const value = form.elements[name].value;
+    return value ? Number(value) : null;
+  });
+  if (cars.filter((value) => value !== null).length < 2) {
+    toast("အတွဲတစ်ခုတွင် ကား အနည်းဆုံး နှစ်စီး ရွေးပါ", true);
+    return;
+  }
+  const payload = {
+    location_id: Number(form.elements.location_id.value),
+    label: form.elements.label.value.trim() || null,
+    lashio_vehicle_id: cars[0],
+    senior_vehicle_id: cars[1],
+    upper_vehicle_id: cars[2],
+    note: form.elements.note.value.trim() || null,
+    is_active: form.elements.is_active.checked,
+    sort_order: edited ? Number(edited.sort_order) : state.pairs.length,
+  };
+  try {
+    if (edited) {
+      await api(`/api/transfer-pairs/${edited.id}`, { method: "PUT", body: payload });
+    } else {
+      await api("/api/transfer-pairs", { method: "POST", body: payload });
+    }
+    $("#pair-dialog").close();
+    toast("ကားအတွဲ သိမ်းပြီးပါပြီ။");
+    await loadPairs();
+  } catch (error) {
+    if (!error.auth) toast(error.message, true);
+  }
+}
+
+async function deletePair(pair) {
+  const name = pair.label || `အတွဲ #${pair.id}`;
+  if (!(await confirmAction(`${name} ကို ဖျက်မလား?`))) return;
+  try {
+    await api(`/api/transfer-pairs/${pair.id}`, { method: "DELETE" });
+    toast("အတွဲ ဖျက်ပြီးပါပြီ။");
+    await loadPairs();
+  } catch (error) {
+    if (!error.auth) toast(error.message, true);
+  }
+}
+
+async function sendPairs() {
+  if (!(await confirmAction("လက်ရှိ အတွဲစာရင်းကို Telegram group သို့ ပို့မလား?"))) {
+    return;
+  }
+  try {
+    const result = await api("/api/transfer-pairs/send", { method: "POST" });
+    toast(`အတွဲ ${result.sent} ခုကို group သို့ ပို့ပြီးပါပြီ။`);
+  } catch (error) {
+    if (!error.auth) toast(error.message, true);
+  }
+}
+
+/* -------------------------------------------------------------------------- */
 /* routes, segments and fares                                                  */
 /* -------------------------------------------------------------------------- */
 function segmentRow(route, segment) {
@@ -1021,6 +1265,7 @@ async function addLocation(event) {
 const loaders = {
   bookings: loadBookings,
   queue: loadQueue,
+  pairs: loadPairs,
   vehicles: loadVehicles,
   drivers: loadDrivers,
   routes: loadRoutes,
@@ -1082,6 +1327,14 @@ function wireEvents() {
   $("#location-form").addEventListener("submit", addLocation);
   $("#segment-form").addEventListener("submit", saveSegment);
   $("#segment-cancel").addEventListener("click", () => $("#segment-dialog").close());
+  $("#assign-cancel").addEventListener("click", () => $("#assign-dialog").close());
+  $("#pair-add").addEventListener("click", () => openPairDialog(null));
+  $("#pair-form").addEventListener("submit", savePair);
+  $("#pair-send").addEventListener("click", sendPairs);
+  $("#pair-cancel").addEventListener("click", () => $("#pair-dialog").close());
+  $("#pair-dialog").addEventListener("click", (event) => {
+    if (event.target === $("#pair-dialog")) $("#pair-dialog").close();
+  });
   $("#segment-dialog").addEventListener("click", (event) => {
     // Clicking the backdrop (the dialog element itself) closes the sheet.
     if (event.target === $("#segment-dialog")) $("#segment-dialog").close();
@@ -1101,7 +1354,8 @@ function wireEvents() {
     const dialogOpen =
       $("#segment-dialog").open ||
       $("#route-dialog").open ||
-      $("#staff-dialog").open;
+      $("#staff-dialog").open ||
+      $("#pair-dialog").open;
     if (
       document.visibilityState === "visible" &&
       $("#gate").hidden &&

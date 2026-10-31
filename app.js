@@ -278,17 +278,18 @@ function showBookingHint(message) {
 // Seat picker: အရှေ့ခုံ / အနောက်ခုံ. `passenger_count` stays the single value
 // the API knows; it is the sum of the ticked seat rows.
 const SEAT_ROWS = [
-  { check: "front_checked", count: "front_count" },
-  { check: "back_checked", count: "back_count" },
+  { check: "front_checked", count: "front_count", price: "front_price" },
+  { check: "back_checked", count: "back_count", price: "back_price" },
 ];
 
 function seatTotal() {
   const form = $("#booking-form");
   let total = 0;
-  SEAT_ROWS.forEach(({ check, count }) => {
+  SEAT_ROWS.forEach(({ check, count, price }) => {
     const picked = form.elements[check].checked;
     const input = form.elements[count];
     input.disabled = !picked;
+    form.elements[price].disabled = !picked;
     if (!picked) return;
     const value = Math.max(0, Math.floor(Number(input.value) || 0));
     input.value = String(value);
@@ -329,8 +330,12 @@ function updateBookingFarePreview() {
   const selectedSegments = route
     ? route.segments.filter((segment) => selectedIds.has(segment.id))
     : [];
+  const form = $("#booking-form");
+  const customPrices = SEAT_ROWS.some(({ price, check }) => form.elements[check].checked && form.elements[price].value !== "");
   const total = selectedSegments.reduce(
-    (sum, segment) => sum + Number(segment.base_fare || 0) * passengers,
+    (sum, segment) => sum + (customPrices
+      ? SEAT_ROWS.reduce((seatSum, { check, count, price }) => seatSum + (form.elements[check].checked ? Number(form.elements[count].value || 0) * (form.elements[price].value === "" ? Number(segment.base_fare || 0) : Number(form.elements[price].value)) : 0), 0)
+      : Number(segment.base_fare || 0) * passengers),
     0
   );
   const preview = $("#booking-fare-preview");
@@ -643,6 +648,10 @@ async function createBooking(event) {
     route_id: Number(form.elements.route_id.value),
     segment_ids: selectedSegmentIds,
     passenger_count: Number(form.elements.passenger_count.value),
+    front_seat_count: form.elements.front_checked.checked ? Number(form.elements.front_count.value) : 0,
+    back_seat_count: form.elements.back_checked.checked ? Number(form.elements.back_count.value) : 0,
+    front_seat_price: form.elements.front_checked.checked && form.elements.front_price.value !== "" ? Number(form.elements.front_price.value) : null,
+    back_seat_price: form.elements.back_checked.checked && form.elements.back_price.value !== "" ? Number(form.elements.back_price.value) : null,
     pickup_time: new Date(form.elements.pickup_time.value).toISOString(),
   };
   if (!payload.customer_name || !payload.route_id || !payload.pickup_time) {
@@ -1507,8 +1516,8 @@ function wireEvents() {
     );
     renderBookingRoadOptions(route);
   });
-  SEAT_ROWS.forEach(({ check, count }) => {
-    [check, count].forEach((name) => {
+  SEAT_ROWS.forEach(({ check, count, price }) => {
+    [check, count, price].forEach((name) => {
       const input = $("#booking-form").elements[name];
       const onChange = () => {
         syncSeatTotal();

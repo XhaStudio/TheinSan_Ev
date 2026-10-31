@@ -934,6 +934,29 @@ async function loadPairs() {
   renderPairs();
 }
 
+// The Hsipaw bridge is the one fixed swap point: every new pair starts here.
+const DEFAULT_PAIR_POINT = "သီပေါ တံတား";
+const NEW_PAIR_POINT = "__new_hsipaw_bridge__";
+
+function isBridgePoint(location) {
+  const name = String(location.name || "").toLowerCase();
+  return name.includes("သီပေါ") || name.includes("hsipaw");
+}
+
+// Pairs are always at the bridge, so create that location on demand when the
+// database has none yet.
+async function resolvePairLocationId(rawValue) {
+  if (rawValue && rawValue !== NEW_PAIR_POINT) return Number(rawValue);
+  const locations = await api("/api/locations");
+  const existing = locations.items.find(isBridgePoint);
+  if (existing) return existing.id;
+  const created = await api("/api/locations", {
+    method: "POST",
+    body: { name: DEFAULT_PAIR_POINT, is_transfer_point: true },
+  });
+  return created.id;
+}
+
 function fillPairVehicles(select, selectedId) {
   select.replaceChildren(new Option("— မရွေး —", ""));
   state.vehicles.forEach((vehicle) => {
@@ -954,7 +977,7 @@ function openPairDialog(pair) {
     const own = state.locations.find((location) => location.id === pair.location_id);
     if (own) choices.push(own);
   }
-  if (!choices.length) {
+  if (!choices.length && pair) {
     toast("အရင်ဆုံး ကားလဲနေရာ (တည်နေရာ) တစ်ခု သတ်မှတ်ပါ", true);
     return;
   }
@@ -962,9 +985,19 @@ function openPairDialog(pair) {
   form.reset();
   const locationSelect = form.elements.location_id;
   locationSelect.replaceChildren();
+  const bridge = choices.find(isBridgePoint);
+  if (!pair && !bridge) {
+    // Default the car-change place to the Hsipaw bridge; the location is
+    // created when the pair is saved.
+    locationSelect.append(new Option(DEFAULT_PAIR_POINT, NEW_PAIR_POINT, true, true));
+  }
   choices.forEach((location) => {
     const option = new Option(location.name, String(location.id));
-    option.selected = pair ? location.id === pair.location_id : choices.length === 1;
+    if (pair) {
+      option.selected = location.id === pair.location_id;
+    } else if (bridge) {
+      option.selected = location.id === bridge.id;
+    }
     locationSelect.append(option);
   });
   form.elements.pair_id.value = pair ? String(pair.id) : "";
@@ -994,8 +1027,15 @@ async function savePair(event) {
     toast("အတွဲတစ်ခုတွင် ကား အနည်းဆုံး နှစ်စီး ရွေးပါ", true);
     return;
   }
+  let locationId;
+  try {
+    locationId = await resolvePairLocationId(form.elements.location_id.value);
+  } catch (error) {
+    if (!error.auth) toast(error.message, true);
+    return;
+  }
   const payload = {
-    location_id: Number(form.elements.location_id.value),
+    location_id: locationId,
     label: form.elements.label.value.trim() || null,
     lashio_vehicle_id: cars[0],
     senior_vehicle_id: cars[1],

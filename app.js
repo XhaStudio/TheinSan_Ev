@@ -982,7 +982,42 @@ function fillPairVehicles(select, selectedId) {
   });
 }
 
-function openPairDialog(pair) {
+// The pair tab is clickable before loadPairs() settles, and the open dialog is
+// not re-rendered when those requests finish. Fetch anything still missing so
+// the car selects never open with only the placeholder.
+async function ensurePairFormData() {
+  const pending = [];
+  if (!state.locations.length) {
+    pending.push(
+      api("/api/locations").then((data) => {
+        state.locations = data.items;
+      })
+    );
+  }
+  if (!state.vehicles.length) {
+    pending.push(
+      api("/api/vehicles").then((data) => {
+        state.vehicles = data.items;
+      })
+    );
+  }
+  await Promise.all(pending);
+}
+
+async function openPairDialog(pair) {
+  try {
+    await ensurePairFormData();
+  } catch (error) {
+    if (!error.auth) toast(error.message, true);
+    return;
+  }
+  if (!state.vehicles.length) {
+    toast(
+      "ကားစာရင်း မရှိသေးပါ။ ယာဉ်များ ထည့်ပြီးမှ ကားအတွဲ သတ်မှတ်နိုင်ပါသည်။",
+      true
+    );
+    return;
+  }
   const points = state.locations.filter((location) => location.is_transfer_point);
   const choices = points.length ? points : state.locations.slice();
   // A pair saved before its point was unflagged must stay selectable.

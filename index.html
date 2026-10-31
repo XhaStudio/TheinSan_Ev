@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="color-scheme" content="light dark">
   <title>EV Taxi အက်ဒမင်</title>
-  <link rel="stylesheet" href="style.css?v=20261030d">
+  <link rel="stylesheet" href="style.css?v=20261031a">
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
@@ -76,16 +76,19 @@
               <span id="seat-picker-title">ခုံ</span>
               <span>ရွေး</span>
               <span>ဦးရေ</span>
+              <span>PRICE</span>
             </div>
             <div class="seat-row">
               <label class="seat-name" for="seat-front">အရှေ့ခုံ</label>
               <input id="seat-front" type="checkbox" name="front_checked" checked aria-label="အရှေ့ခုံ ရွေးမည်">
               <input name="front_count" type="number" min="0" max="3" step="1" value="1" inputmode="numeric" aria-label="အရှေ့ခုံ ဦးရေ">
+              <input name="front_price" type="number" min="0" max="999999999" step="1" inputmode="numeric" placeholder="ဈေးနှုန်း" aria-label="အရှေ့ခုံ တစ်ဦးဈေးနှုန်း">
             </div>
             <div class="seat-row">
               <label class="seat-name" for="seat-back">အနောက်ခုံ</label>
               <input id="seat-back" type="checkbox" name="back_checked" checked aria-label="အနောက်ခုံ ရွေးမည်">
               <input name="back_count" type="number" min="0" max="6" step="1" value="2" inputmode="numeric" aria-label="အနောက်ခုံ ဦးရေ">
+              <input name="back_price" type="number" min="0" max="999999999" step="1" inputmode="numeric" placeholder="ဈေးနှုန်း" aria-label="အနောက်ခုံ တစ်ဦးဈေးနှုန်း">
             </div>
             <p id="seat-total" class="muted seat-total" aria-live="polite">စုစုပေါင်း ၃ ဦး</p>
             <input name="passenger_count" type="hidden" min="1" max="20" step="1" value="3" required>
@@ -284,6 +287,6 @@
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
   <script src="config.js?v=20261030d"></script>
-  <script src="app.js?v=20261031c"></script>
+  <script src="app.js?v=20261031d"></script>
 </body>
 </html>

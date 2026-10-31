@@ -291,7 +291,7 @@ h3 {
   min-width: 0;
 }
 
-/* Seat picker: ခုံ | ရွေး | ဦးရေ */
+/* Seat picker: ခုံ | ရွေး | ဦးရေ | PRICE */
 .seat-picker {
   display: flex;
   flex-direction: column;
@@ -306,7 +306,7 @@ h3 {
 .seat-picker-head,
 .seat-row {
   display: grid;
-  grid-template-columns: 1fr 64px 84px;
+  grid-template-columns: minmax(72px, 1fr) 40px minmax(58px, 72px) minmax(82px, 104px);
   align-items: center;
   gap: 10px;
 }
@@ -319,7 +319,8 @@ h3 {
 }
 
 .seat-picker-head span:nth-child(2),
-.seat-picker-head span:nth-child(3) {
+.seat-picker-head span:nth-child(3),
+.seat-picker-head span:nth-child(4) {
   text-align: center;
 }
 
@@ -355,6 +356,10 @@ h3 {
   width: 100%;
   margin: 0;
   text-align: center;
+}
+
+.seat-row input[name$="_price"] {
+  padding-inline: 6px;
 }
 
 .seat-row input[type="number"]:disabled {

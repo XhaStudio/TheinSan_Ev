@@ -923,14 +923,27 @@ function renderPairs() {
 }
 
 async function loadPairs() {
-  const [pairs, locations, vehicles] = await Promise.all([
+  // Load the three lists independently: if the server is older than this page
+  // (no /api/transfer-pairs yet) the car and location lists must still fill,
+  // otherwise the car selectors would be empty and unusable.
+  const [pairs, locations, vehicles] = await Promise.allSettled([
     api("/api/transfer-pairs"),
     api("/api/locations"),
     api("/api/vehicles"),
   ]);
-  state.pairs = pairs.items;
-  state.locations = locations.items;
-  state.vehicles = vehicles.items;
+  if (locations.status === "fulfilled") state.locations = locations.value.items;
+  if (vehicles.status === "fulfilled") state.vehicles = vehicles.value.items;
+  if (pairs.status === "rejected") {
+    if (pairs.reason && pairs.reason.auth) throw pairs.reason;
+    state.pairs = [];
+    renderPairs();
+    toast(
+      "ကားချိန်း စာရင်း မရနိုင်ပါ — server ကို အပ်ဒိတ် လုပ်ရန် လိုအပ်နေပါသည်။",
+      true
+    );
+    return;
+  }
+  state.pairs = pairs.value.items;
   renderPairs();
 }
 
